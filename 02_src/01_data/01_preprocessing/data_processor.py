@@ -1,12 +1,13 @@
+from typing import Any
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
 
 class DataProcessor:
-    def __init__(self, config = None):
+    def __init__(self, config: dict = None):
         self.model_cfg = config
         self.target = "is_active"
 
@@ -16,30 +17,30 @@ class DataProcessor:
         self.processed_dir = self.root / "00_data" / "02_processed"
         self.watch_features_path = self.processed_dir / "watch_features.csv"
 
-    def _select_columns(self, df):
+    def _select_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         user_columns = ['user_id', 'age', 'plan_tier', 'subscription_start_date', 'monthly_spend']
         existing_cols = [c for c in user_columns if c in df.columns]
         if self.target in df.columns: #학습 or 모델 테스트 데이터인 경우 포함시킴
             existing_cols.append(self.target)
         return df[existing_cols].copy()
 
-    def _clean_age(self, df):
+    def _clean_age(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'age' in df.columns:
             df.loc[(df["age"] < 0) | (df["age"] > 100), "age"] = np.nan
             df['age'] = df['age'].fillna(df['age'].median())
         return df
 
-    def _add_age_group(self, df):
+    def _add_age_group(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'age' in df.columns:
             df['age_group'] = (df['age'] // 10).fillna(0).astype(int)
         return df
 
-    def _fill_monthly_spend_nan(self, df):
+    def _fill_monthly_spend_nan(self, df: pd.DataFrame) -> pd.DataFrame:
         if 'monthly_spend' in df.columns:
             df['monthly_spend'] = df['monthly_spend'].fillna(0)
         return df
 
-    def _process_dates(self, df, reference_date):
+    def _process_dates(self, df: pd.DataFrame, reference_date: Any) -> pd.DataFrame:
         if "subscription_start_date" in df.columns:
             df["subscription_start_date"] = pd.to_datetime(df["subscription_start_date"], errors='coerce')
             df["subscription_start_date"] = df["subscription_start_date"].fillna(reference_date)
@@ -49,7 +50,7 @@ class DataProcessor:
             return df.drop(columns=['subscription_start_date'])
         return df
 
-    def _load_watch_features(self):
+    def _load_watch_features(self) -> tuple[pd.DataFrame, Any]:
         if not self.watch_features_path.exists():
             # 집계한 csv 파일 생성
             self.generate_and_save_watch_features()
@@ -65,15 +66,19 @@ class DataProcessor:
 
     # --- [Main Pipeline] ---
 
-    # user data 전처리
-    def clean_user_data(self, df):
+    def clean_user_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        user data 정제
+        """
         return (df.pipe(self._select_columns)
             .pipe(self._clean_age)
             .pipe(self._add_age_group)
             .pipe(self._fill_monthly_spend_nan))
 
-    def build_features(self, df):
-
+    def build_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        watch feature 추가
+        """
         watch_features, reference_date = self._load_watch_features()
         df = df.pipe(self._process_dates, reference_date)
 
@@ -88,13 +93,18 @@ class DataProcessor:
 
         return final_df
 
-    def run_full_pipeline(self, raw_df):
-        """Raw 데이터로부터 최종 모델 입력(X) 제작"""
+    def run_full_pipeline(self, raw_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Raw 데이터로부터 최종 모델 입력(X) 제작
+        """
         interim_df = self.clean_user_data(raw_df)
         final_df = self.build_features(interim_df)
         return final_df
 
-    def load_train_data(self, raw_df):
+    def load_train_data(self, raw_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        모델 학습 dataset에서 전처리 후 train/test로 분리하여 반환
+        """
         if 'user_id' in raw_df.columns:
             train_df = raw_df.drop(columns=['user_id'])
         # churn 변수 생성
@@ -102,9 +112,11 @@ class DataProcessor:
         # 기존 변수 제거
         final_train_df = train_df.drop(columns=['is_active'])
 
+        # feature / target 분리
         X = final_train_df.drop(columns=['is_churned'])
         y = final_train_df['is_churned']
 
+        # 모델별 설정값으로 split
         X_train, X_test, y_train, y_test = train_test_split(
             X, y,
             test_size=self.model_cfg.get('test_size', 0.2),
@@ -114,9 +126,11 @@ class DataProcessor:
 
         return X_train, X_test, y_train, y_test
 
-    def generate_and_save_watch_features(self):
-
-        raw_path = self.root / "00_data" / "00_raw" / "netflix_watch_history.csv"  # 수정 예정
+    def generate_and_save_watch_features(self) -> None:
+        """
+        watch history로부터 user_id를 사용하여 유저별로 데이터 집계 후 feature로 저장
+        """
+        raw_path = self.root / "00_data" / "00_raw" / "netflix_watch_history.csv"
         if not raw_path.exists():
             print(f"Error: {raw_path} not found.")
             return
@@ -148,7 +162,7 @@ class DataProcessor:
         watch_features.to_csv(self.watch_features_path, index=False)
         print(f"Saved pre-calculated features to {self.watch_features_path}")
 
-    def _process_watch_history(self, history_df):
+    def _process_watch_history(self, history_df: pd.DataFrame) -> pd.DataFrame:
         df = history_df.copy()
         df['watch_date'] = pd.to_datetime(history_df['watch_date'], errors='coerce')
         df["watch_duration_minutes"] = history_df["watch_duration_minutes"].fillna(0)
@@ -156,7 +170,7 @@ class DataProcessor:
         df['completed'] = history_df['progress_percentage'] >= 90
         return df
 
-    def _agg_watch_basic_stats(self, df):
+    def _agg_watch_basic_stats(self, df: pd.DataFrame) -> pd.DataFrame:
         basic_stats = df.groupby("user_id").agg(
             watch_count=("movie_id", "size"),
             unique_movies=("movie_id", "nunique"),
@@ -170,7 +184,7 @@ class DataProcessor:
         )
         return basic_stats
 
-    def _calculate_watch_time_features(self, df, last_date, recent_threshold = 31):
+    def _calculate_watch_time_features(self, df: pd.DataFrame, last_date: Any, recent_threshold: int = 31) -> pd.DataFrame:
         recent_cutoff = last_date - pd.Timedelta(days = recent_threshold)
         recent_count = (
             df[df["watch_date"] >= recent_cutoff]

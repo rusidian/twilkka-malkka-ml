@@ -10,7 +10,10 @@ SAVE_FOLDER = ROOT / "05_artifacts"
 
 class ModelManager:
     @staticmethod
-    def save_model_package(package_dict):
+    def save_model_package(package_dict: dict) -> None:
+        """
+        model package dict을 받아 모델, 전처리기, 설정으로 구분하여 저장
+        """
         model = package_dict['model']
         model_type = type(model).__name__
 
@@ -47,7 +50,10 @@ class ModelManager:
         print(f"✅ [{model_folder}에 모델 저장 완료 ({save_method} 방식)")
 
     @staticmethod
-    def load_model_package(model_type):
+    def load_model_package(model_type: str) -> dict:
+        """
+        입력받은 model_type에 맞는 모델, 전처리기, 설정을 로드하여 model package로 반환
+        """
         model_folder = SAVE_FOLDER / "00_models" / model_type
 
         # Config 먼저 읽기
